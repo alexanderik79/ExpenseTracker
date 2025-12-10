@@ -1,8 +1,13 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, SectionList, TouchableOpacity, Alert, Dimensions } from 'react-native';
+// --- ReportsScreen.js (Полная версия с тремя графиками) ---
+
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, Alert, Dimensions } from 'react-native'; 
 import { Ionicons } from '@expo/vector-icons'; 
 import { useExpenses } from '../context/ExpenseContext';
 import { LineChart } from 'react-native-chart-kit'; 
+
+// <-- ИМПОРТ НОВОГО КОМПОНЕНТА -->
+import DailyBarChartModal from '../components/DailyBarChartModal'; 
 
 // --- СТИЛИ ---
 const styles = StyleSheet.create({
@@ -43,9 +48,9 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     monthlyTrendBox: { 
-        backgroundColor: '#1F1F1F', // <-- ИСПРАВЛЕНО: ТЕМНО-СЕРЫЙ ФОН КОНТЕЙНЕРА
+        backgroundColor: '#1F1F1F', 
         width: 150, 
-        height: 120, 
+        height: 100, 
         borderRadius: 8,
         overflow: 'hidden', 
         justifyContent: 'center',
@@ -166,11 +171,13 @@ const MonthlyTrendChart = ({ data }) => {
     }
 
     const totals = data.map(d => d.total);
+    const minTotal = Math.min(...totals); 
     
-    // --- УСТАНОВКА БАЗОВОЙ ЛИНИИ НА НУЛЕ ---
+    // ДИНАМИЧЕСКИЙ РАСЧЕТ ОСИ Y ДЛЯ МАСШТАБИРОВАНИЯ
     let yAxisMin = 0; 
-    // ----------------------------------------
-
+    if (minTotal > 0) {
+        yAxisMin = Math.max(0, minTotal - 5); 
+    }
 
     const chartData = {
         labels: data.map(d => d.month), 
@@ -184,26 +191,25 @@ const MonthlyTrendChart = ({ data }) => {
     };
     
     const chartConfig = {
-        backgroundColor: '#1F1F1F', // <-- ИСПРАВЛЕНО: ТЕМНО-СЕРЫЙ ФОН ГРАФИКА
-        backgroundGradientFrom: '#1F1F1F', // <-- ИСПРАВЛЕНО
-        backgroundGradientTo: '#1F1F1F', // <-- ИСПРАВЛЕНО
+        backgroundColor: '#1F1F1F', 
+        backgroundGradientFrom: '#1F1F1F', 
+        backgroundGradientTo: '#1F1F1F', 
         decimalPlaces: 0, 
         color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
         labelColor: (opacity = 0) => `rgba(255, 255, 255, ${opacity})`, 
-        yAxisMin: yAxisMin, // <-- УСТАНОВЛЕНО В 0
+        yAxisMin: yAxisMin, 
         propsForDots: {
             r: "1", 
             strokeWidth: "1",
             stroke: "#FF702A"
         },
-        paddingBottom: 10, // <-- ДОБАВЛЕНО: Отступ для видимости нижней точки
     };
 
     return (
         <LineChart
             data={chartData}
             width={150} 
-            height={90} // Высота из стилей
+            height={100} 
             chartConfig={chartConfig}
             bezier 
             withHorizontalLabels={false} 
@@ -218,7 +224,7 @@ const MonthlyTrendChart = ({ data }) => {
 
 
 // --- КОМПОНЕНТ: BudgetProgress ---
-const BudgetProgress = ({ spent, limit, currency }) => { 
+const BudgetProgress = ({ spent, limit, currency, onPress }) => { 
     if (limit <= 0) return null; 
 
     const remaining = limit - spent;
@@ -232,7 +238,10 @@ const BudgetProgress = ({ spent, limit, currency }) => {
     const barWidth = Math.min(percentage, 100); 
 
     return (
-        <View style={styles.progressBarContainer}>
+        <TouchableOpacity 
+            onPress={onPress} 
+            style={styles.progressBarContainer}
+        >
             <View style={[styles.progressBarBase, {backgroundColor: remaining < 0 ? '#330000' : '#2D2D2D'}]}>
                 <View style={[styles.progressBarFill, { width: `${barWidth}%`, backgroundColor: barColor }]} />
             </View>
@@ -242,13 +251,28 @@ const BudgetProgress = ({ spent, limit, currency }) => {
                     Limit: {limit.toFixed(2)} {currency} 
                 </Text>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 };
 // --- КОНЕЦ BudgetProgress ---
 
 
-// --- Helper function to group data ---
+// --- HELPER ФУНКЦИИ ---
+
+const getTitle = (monthKey) => {
+    const [year, month] = monthKey.split('-');
+    const date = new Date(year, month - 1); 
+    const options = { year: 'numeric', month: 'long' };
+    return date.toLocaleDateString('en-US', options);
+};
+
+const getMonthName = (monthKey) => {
+    const [year, month] = monthKey.split('-');
+    const date = new Date(year, month - 1); 
+    const options = { month: 'short' };
+    return date.toLocaleDateString('en-US', options);
+};
+
 const groupExpenses = (expenses, categories) => {
     const groupedData = {};
 
@@ -278,25 +302,124 @@ const groupExpenses = (expenses, categories) => {
     return Object.values(groupedData).sort((a, b) => b.title.localeCompare(a.title));
 };
 
-// Helper to format the month key (YYYY-MM) into a readable title
-const getTitle = (monthKey) => {
-    const [year, month] = monthKey.split('-');
-    const date = new Date(year, month - 1); 
-    const options = { year: 'numeric', month: 'long' };
-    return date.toLocaleDateString('en-US', options);
+// Функция: Группировка трат по дням для BarChart (по КОНКРЕТНОЙ КАТЕГОРИИ)
+const prepareDailyData = (expenses, categoryName) => {
+    if (!expenses || expenses.length === 0) return { labels: [], datasets: [{ data: [] }] };
+
+    const dailyTotals = {};
+    
+    // 1. Сбор данных по дням
+    expenses.forEach(exp => {
+        if (exp.category === categoryName) {
+            const day = exp.date.split('-')[2]; 
+            dailyTotals[day] = (dailyTotals[day] || 0) + exp.amount;
+        }
+    });
+
+    if (Object.keys(dailyTotals).length === 0) {
+        return { labels: [], datasets: [{ data: [] }] };
+    }
+
+    // 2. Генерация всех дней месяца для правильной оси X
+    const firstDayKey = expenses[0].date.substring(0, 7); 
+    const [year, month] = firstDayKey.split('-');
+    const daysInMonth = new Date(year, month, 0).getDate();
+    
+    const labels = [];
+    const data = [];
+
+    for (let i = 1; i <= daysInMonth; i++) {
+        const dayKey = i.toString().padStart(2, '0');
+        labels.push(dayKey);
+        data.push(dailyTotals[dayKey] || 0);
+    }
+
+    return {
+        labels: labels,
+        datasets: [{
+            data: data,
+        }]
+    };
 };
 
-// Helper to get short month name for trend chart
-const getMonthName = (monthKey) => {
+// Функция: Группировка трат по дням для BarChart (ОБЩИЙ ТРЕНД ЗА МЕСЯЦ)
+const prepareMonthlyTrendData = (monthExpenses, monthKey) => {
+    if (!monthExpenses || monthExpenses.length === 0) return { labels: [], datasets: [{ data: [] }] };
+
+    const dailyTotals = {};
+    
+    // 1. Сбор данных по дням для ВСЕХ категорий в месяце
+    monthExpenses.forEach(exp => {
+        const expenseMonthKey = exp.date.substring(0, 7);
+        if (expenseMonthKey === monthKey) {
+            const day = exp.date.split('-')[2]; 
+            dailyTotals[day] = (dailyTotals[day] || 0) + exp.amount;
+        }
+    });
+
+    if (Object.keys(dailyTotals).length === 0) {
+        return { labels: [], datasets: [{ data: [] }] };
+    }
+
+    // 2. Генерация всех дней месяца для правильной оси X
     const [year, month] = monthKey.split('-');
-    const date = new Date(year, month - 1); 
-    const options = { month: 'short' };
-    return date.toLocaleDateString('en-US', options);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    
+    const labels = [];
+    const data = [];
+
+    for (let i = 1; i <= daysInMonth; i++) {
+        const dayKey = i.toString().padStart(2, '0');
+        labels.push(dayKey);
+        data.push(dailyTotals[dayKey] || 0);
+    }
+
+    return {
+        labels: labels,
+        datasets: [{
+            data: data,
+        }]
+    };
 };
+
+// НОВАЯ ФУНКЦИЯ: Группировка трат по месяцам для BarChart (ГОДОВОЙ ТРЕНД)
+const prepareYearlyTrendData = (sections) => {
+    // Используем последние 12 месяцев
+    const dataSlice = sections.slice(0, 12).reverse();
+    
+    const labels = dataSlice.map(d => getMonthName(d.title));
+    const data = dataSlice.map(d => d.total);
+
+    if (data.length === 0) {
+        return { labels: [], datasets: [{ data: [] }] };
+    }
+
+    return {
+        labels: labels,
+        datasets: [{
+            data: data,
+        }]
+    };
+};
+// --- КОНЕЦ HELPER ФУНКЦИЙ ---
 
 
 const ReportsScreen = () => {
     const { expenses, deleteExpense, categories, currency } = useExpenses(); 
+    
+    // --- STATE для модального окна (ОБНОВЛЕН) ---
+    const [modalVisible, setModalVisible] = useState(false);
+    
+    // 1. Данные для графика категории (Bar)
+    const [categoryChartData, setCategoryChartData] = useState(null); 
+    
+    // 2. Данные для общего месячного тренда (Bar)
+    const [monthlyTrendChartData, setMonthlyTrendChartData] = useState(null); 
+    
+    // 3. Данные для годового тренда (Line)
+    const [yearlyTrendChartData, setYearlyTrendChartData] = useState(null);
+    
+    const [chartTitle, setChartTitle] = useState('');
     
     const sections = useMemo(() => groupExpenses(expenses, categories), [expenses, categories]);
     
@@ -307,7 +430,7 @@ const ReportsScreen = () => {
         }, {});
     }, [categories]);
 
-    // Подготовка данных для чарта тренда (последние 12 месяцев)
+    // Подготовка данных для мини-чарта тренда (последние 12 месяцев)
     const monthlyTrendData = useMemo(() => {
         return sections.slice(0, 12).map(section => ({
             month: getMonthName(section.title),
@@ -330,6 +453,30 @@ const ReportsScreen = () => {
             ]
         );
     };
+
+    // --- ОБРАБОТЧИК ДЛЯ ОТКРЫТИЯ МОДАЛЬНОГО ОКНА ---
+    const handleBarPress = (monthKey, categoryName) => {
+        
+        const monthSection = sections.find(s => s.title === monthKey);
+        if (!monthSection || monthSection.data.length === 0) return;
+
+        // 1. Готовим данные для графика КАТЕГОРИИ
+        const categoryData = prepareDailyData(monthSection.data, categoryName);
+
+        // 2. Готовим данные для графика ОБЩЕГО ТРЕНДА ЗА МЕСЯЦ
+        const trendData = prepareMonthlyTrendData(monthSection.data, monthKey); // Используем данные только текущего месяца
+        
+        // 3. Готовим данные для графика ГОДОВОГО ТРЕНДА
+        const yearlyData = prepareYearlyTrendData(sections); 
+
+        // 4. Устанавливаем стейты
+        setCategoryChartData(categoryData);
+        setMonthlyTrendChartData(trendData); 
+        setYearlyTrendChartData(yearlyData);
+        setChartTitle(`${categoryName}`);    
+        setModalVisible(true);
+    };
+    // --------------------------------------------------------
 
     const renderItem = ({ item }) => (
         <View style={styles.expenseItem}>
@@ -365,7 +512,6 @@ const ReportsScreen = () => {
                 <Text style={styles.headerTotal}>Total for Month: {total.toFixed(2)} {currency}</Text>
                 
                 <View style={styles.categoryTotals}>
-                    <Text style={styles.categoryTotalsLabel}>Category Breakdown / Budget Progress:</Text> 
                     {Object.keys(monthCategories).map(catName => {
                         const spent = monthCategories[catName];
                         const limit = categoryLimits[catName] || 0; 
@@ -378,9 +524,13 @@ const ReportsScreen = () => {
                                         spent={spent} 
                                         limit={limit} 
                                         currency={currency} 
+                                        onPress={() => handleBarPress(title, catName)} 
                                     />
                                 ) : (
-                                    <Text style={styles.categoryNoLimitText}>Spent: {spent.toFixed(2)} {currency} (No limit)</Text>
+                                    // Обеспечиваем возможность нажатия, даже если лимита нет
+                                    <TouchableOpacity onPress={() => handleBarPress(title, catName)}>
+                                        <Text style={styles.categoryNoLimitText}>Spent: {spent.toFixed(2)} {currency} (No limit)</Text>
+                                    </TouchableOpacity>
                                 )}
                             </View>
                         );
@@ -408,6 +558,18 @@ const ReportsScreen = () => {
                 keyExtractor={(item) => item.id}
                 stickySectionHeadersEnabled={false}
                 contentContainerStyle={{ paddingBottom: 20 }}
+            />
+            
+            {/* --- ИСПОЛЬЗУЕМ ВЫНЕСЕННЫЙ КОМПОНЕНТ --- */}
+            <DailyBarChartModal
+                isVisible={modalVisible}
+                onClose={() => setModalVisible(false)}
+                // Передаем все три набора данных
+                categoryData={categoryChartData}    
+                monthlyTrendData={monthlyTrendChartData} 
+                yearlyTrendData={yearlyTrendChartData}
+                title={chartTitle}
+                currency={currency}
             />
         </View>
     );
