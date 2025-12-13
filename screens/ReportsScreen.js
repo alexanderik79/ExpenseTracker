@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
     },
     monthlyTrendBox: { 
         backgroundColor: '#1F1F1F', 
-        width: 150, 
+        width: 300, 
         height: 100, 
         borderRadius: 8,
         overflow: 'hidden', 
@@ -192,8 +192,8 @@ const MonthlyTrendChart = ({ data }) => {
     
     const chartConfig = {
         backgroundColor: '#1F1F1F', 
-        backgroundGradientFrom: '#1F1F1F', 
-        backgroundGradientTo: '#1F1F1F', 
+        backgroundGradientFrom: 'rgba(0, 0, 0, 0)', // <-- СДЕЛАТЬ ПОЛНОСТЬЮ ПРОЗРАЧНЫМ
+        backgroundGradientTo: 'rgba(0, 0, 0, 0)',
         decimalPlaces: 0, 
         color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
         labelColor: (opacity = 0) => `rgba(255, 255, 255, ${opacity})`, 
@@ -208,7 +208,7 @@ const MonthlyTrendChart = ({ data }) => {
     return (
         <LineChart
             data={chartData}
-            width={150} 
+            width={300} 
             height={100} 
             chartConfig={chartConfig}
             bezier 
@@ -216,6 +216,7 @@ const MonthlyTrendChart = ({ data }) => {
             withVerticalLabels={false} 
             withInnerLines={false}
             withOuterLines={false}
+            withShadow={false}
             style={styles.trendChartStyle} 
         />
     );

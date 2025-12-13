@@ -1,8 +1,8 @@
-// --- DailyBarChartModal.js (ОБНОВЛЕН ДЛЯ ТРЕХ ГРАФИКОВ) ---
+// --- DailyBarChartModal.js (Финальное исправление: принудительное добавление 0 в данные и пустой метки) ---
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Dimensions, ScrollView } from 'react-native'; 
 import { Ionicons } from '@expo/vector-icons'; 
-import { BarChart, LineChart } from 'react-native-chart-kit'; // Теперь импортируем LineChart
+import { BarChart } from 'react-native-chart-kit'; 
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -16,18 +16,17 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: screenWidth * 0.95,
-    // Модалка теперь должна быть способна прокручиваться, чтобы вместить 3 графика
     backgroundColor: '#1F1F1F',
     borderRadius: 15,
     padding: 15,
-    paddingBottom: 25, 
+    paddingBottom: 45, 
   },
   // Общий заголовок модалки
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FF702A',
-    marginBottom: 20, // Увеличим отступ
+    marginBottom: 20, 
     textAlign: 'center',
   },
   // Заголовки графиков
@@ -57,13 +56,12 @@ const styles = StyleSheet.create({
 // --- КОМПОНЕНТ DailyBarChartModal (Отображает ТРИ графика) ---
 const DailyBarChartModal = ({ isVisible, onClose, categoryData, monthlyTrendData, yearlyTrendData, title, currency }) => {
     
-  // Проверка на наличие данных категории (основной триггер модалки)
   if (!isVisible || !categoryData || !categoryData.datasets || categoryData.datasets[0].data.length === 0) {
     return null;
   }
 
-  // --- ОБЩАЯ КОНФИГУРАЦИЯ ДЛЯ BAR CHART ---
-  const barChartConfig = {
+  // --- БАЗОВАЯ КОНФИГУРАЦИЯ С fromZero: true ---
+  const chartConfig = {
     backgroundGradientFrom: '#1F1F1F',
     backgroundGradientTo: '#1F1F1F',
     decimalPlaces: 0, 
@@ -74,33 +72,43 @@ const DailyBarChartModal = ({ isVisible, onClose, categoryData, monthlyTrendData
     style: { borderRadius: 16 },
     barPercentage: 0.8, 
     yAxisMin: 0, 
-  };
-  
-  // --- ОБЩАЯ КОНФИГУРАЦИЯ ДЛЯ LINE CHART (для годового тренда) ---
-  const lineChartConfig = {
-    ...barChartConfig,
-    color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`, // Линия будет белой
-    propsForDots: {
-      r: "4", 
-      strokeWidth: "2",
-      stroke: "#FF702A" // Точки будут оранжевыми
-    },
-    // Переопределяем цвет линии для датасета
-    datasetColors: [(opacity = 1) => `rgba(255, 112, 42, ${opacity})`],
+    fromZero: true, 
   };
     
   // --- ВСПОМОГАТЕЛЬНЫЙ КОМПОНЕНТ ДЛЯ РЕНДЕРИНГА ГРАФИКА ---
-  const renderChart = (data, chartTitleText, subtitleText, type = 'BarChart') => {
+  const renderChart = (data, chartTitleText, subtitleText, isYearly = false) => {
     if (!data || data.datasets[0].data.length === 0) return null;
     
-    // Расчет требуемой ширины: 20 пикселей на столбец + 50 пикселей для оси Y
-    // Используем меньшую ширину для годового тренда, чтобы он поместился (12 меток)
-    const columnWidth = type === 'BarChart' ? 20 : 35; 
-    const chartWidth = data.labels.length * columnWidth + 50; 
-    const isScrollable = chartWidth > screenWidth * 0.85;
+    // --- ПРИНУДИТЕЛЬНЫЙ СТАРТ ОСИ Y С 0 ДЛЯ ГОДОВОГО ГРАФИКА ---
+    let displayData = data;
+    
+    if (isYearly) {
+        const originalData = data.datasets[0].data;
+        
+        // 1. Создаем модифицированный массив данных, добавляя 0
+        const modifiedData = [...originalData, 0];
+        
+        // 2. Создаем модифицированный массив меток, добавляя пустую строку
+        const modifiedLabels = [...data.labels, ""];
 
-    const Component = type === 'LineChart' ? LineChart : BarChart;
-    const config = type === 'LineChart' ? lineChartConfig : barChartConfig;
+        displayData = {
+            labels: modifiedLabels,
+            datasets: [{
+                data: modifiedData,
+            }]
+        };
+        // Мы используем пустую метку "", чтобы не портить внешний вид графика, 
+        // но при этом BarChart учитывает это нулевое значение для масштабирования оси Y.
+    }
+    // -------------------------------------------------------------------
+
+    // Ширина графика рассчитывается на основе КОЛИЧЕСТВА МЕТОК в displayData.labels.
+    const isYearlyTrend = displayData.labels.length > 12; // Теперь 12 месяцев + 1 пустая метка
+    const columnWidth = isYearlyTrend ? 35 : 20; 
+    
+    // Учитываем, что меток стало на одну больше (если isYearly)
+    const chartWidth = displayData.labels.length * columnWidth + 50; 
+    const isScrollable = chartWidth > screenWidth * 0.85;
 
     return (
       <View style={{marginBottom: 25, borderBottomWidth: 1, borderBottomColor: '#333', paddingBottom: 15}}>
@@ -112,15 +120,13 @@ const DailyBarChartModal = ({ isVisible, onClose, categoryData, monthlyTrendData
           showsHorizontalScrollIndicator={isScrollable}
           contentContainerStyle={{ paddingRight: isScrollable ? 20 : 0 }}
         >
-          <Component
-            data={data}
+          <BarChart
+            data={displayData} 
             width={isScrollable ? chartWidth : screenWidth * 0.85} 
             height={250} 
             yAxisLabel={currency}
-            chartConfig={config}
-            // Поворот меток только для дневных/месячных баров
-            verticalLabelRotation={type === 'LineChart' ? 0 : -45} 
-            bezier={type === 'LineChart'} // Сглаживание линии
+            chartConfig={chartConfig} 
+            verticalLabelRotation={-45} 
             style={{
               marginVertical: 8,
               borderRadius: 16,
@@ -147,11 +153,15 @@ const DailyBarChartModal = ({ isVisible, onClose, categoryData, monthlyTrendData
     >
       <View style={styles.modalOverlay}>
         <ScrollView contentContainerStyle={styles.modalContent}>
+          
+          {/* ОБЩИЙ ЗАГОЛОВОК МОДАЛКИ */}
+          <Text style={styles.modalTitle}>Detail Report</Text>
             
           {/* 1. ГРАФИК ПО КОНКРЕТНОЙ КАТЕГОРИИ (Bar Chart) */}
           {renderChart(
             categoryData, 
             `Daily Trend for Category: "${title}"`,
+            `Spending by day in ${currency}`
           )}
             
           {/* 2. ГРАФИК ОБЩЕГО МЕСЯЧНОГО ТРЕНДА (Bar Chart) */}
@@ -159,20 +169,23 @@ const DailyBarChartModal = ({ isVisible, onClose, categoryData, monthlyTrendData
             renderChart(
               monthlyTrendData, 
               `Overall Monthly Daily Trend`,
+              `Total spending by day in ${currency}`
             )
           }
 
-          {/* 3. ГРАФИК ГОДОВОГО ТРЕНДА (Line Chart) */}
+          {/* 3. ГРАФИК ГОДОВОГО ТРЕНДА (Bar Chart) - isYearly=true для принудительного старта с 0 */}
           {yearlyTrendData && yearlyTrendData.datasets[0].data.length > 0 && 
             renderChart(
               yearlyTrendData, 
               `Yearly Spending Trend`,
+              `Total spending over 12 months in ${currency}`,
+              true // <-- Указываем, что это годовой график
             )
           }
 
           <View style={styles.closeButtonContainer}>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close-circle-outline" size={35} color="#CF6679" />
+              <Ionicons name="close-circle-outline" size={65} color="#CF6679" />
             </TouchableOpacity>
           </View>
         </ScrollView>
