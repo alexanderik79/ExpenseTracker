@@ -565,12 +565,12 @@ const ReportsScreen = () => {
             <DailyBarChartModal
                 isVisible={modalVisible}
                 onClose={() => setModalVisible(false)}
-                // Передаем все три набора данных
                 categoryData={categoryChartData}    
                 monthlyTrendData={monthlyTrendChartData} 
                 yearlyTrendData={yearlyTrendChartData}
                 title={chartTitle}
                 currency={currency}
+                allCategories={categories} 
             />
         </View>
     );

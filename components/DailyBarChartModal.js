@@ -1,12 +1,11 @@
-// --- DailyBarChartModal.js (Финальное исправление: принудительное добавление 0 в данные и пустой метки) ---
+// --- DailyBarChartModal.js ---
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Dimensions, ScrollView } from 'react-native'; 
 import { Ionicons } from '@expo/vector-icons'; 
-import { BarChart } from 'react-native-chart-kit'; 
+import { BarChart, PieChart } from 'react-native-chart-kit'; 
 
 const screenWidth = Dimensions.get('window').width;
 
-// --- СТИЛИ ДЛЯ МОДАЛЬНОГО ОКНА ---
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
@@ -21,15 +20,13 @@ const styles = StyleSheet.create({
     padding: 15,
     paddingBottom: 45, 
   },
-  // Общий заголовок модалки
   modalTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#FF702A',
     marginBottom: 20, 
     textAlign: 'center',
   },
-  // Заголовки графиков
   chartTitle: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -51,16 +48,39 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     backgroundColor: '#333333', 
   },
+  divider: {
+    height: 1,
+    backgroundColor: '#333',
+    marginVertical: 20,
+    width: '100%'
+  }
 });
 
-// --- КОМПОНЕНТ DailyBarChartModal (Отображает ТРИ графика) ---
-const DailyBarChartModal = ({ isVisible, onClose, categoryData, monthlyTrendData, yearlyTrendData, title, currency }) => {
+const DailyBarChartModal = ({ 
+    isVisible, 
+    onClose, 
+    categoryData, 
+    monthlyTrendData, 
+    yearlyTrendData, 
+    title, 
+    currency,
+    allCategories // <-- Добавьте этот пропс при вызове в ReportsScreen
+}) => {
     
-  if (!isVisible || !categoryData || !categoryData.datasets || categoryData.datasets[0].data.length === 0) {
-    return null;
-  }
+  if (!isVisible) return null;
 
-  // --- БАЗОВАЯ КОНФИГУРАЦИЯ С fromZero: true ---
+  // --- 1. ПОДГОТОВКА ДАННЫХ ДЛЯ PIE CHART (Лимиты) ---
+  const pieData = (allCategories || [])
+    .filter(cat => cat.limit > 0)
+    .map(cat => ({
+      name: cat.name,
+      limit: cat.limit,
+      color: cat.color || '#FF702A',
+      legendFontColor: '#BBBBBB',
+      legendFontSize: 12,
+    }));
+
+  // --- БАЗОВАЯ КОНФИГУРАЦИЯ ДЛЯ ГРАФИКОВ ---
   const chartConfig = {
     backgroundGradientFrom: '#1F1F1F',
     backgroundGradientTo: '#1F1F1F',
@@ -71,128 +91,114 @@ const DailyBarChartModal = ({ isVisible, onClose, categoryData, monthlyTrendData
     propsForYLabels: { fontSize: 10 },
     style: { borderRadius: 16 },
     barPercentage: 0.8, 
-    yAxisMin: 0, 
     fromZero: true, 
   };
     
-  // --- ВСПОМОГАТЕЛЬНЫЙ КОМПОНЕНТ ДЛЯ РЕНДЕРИНГА ГРАФИКА ---
-  const renderChart = (data, chartTitleText, subtitleText, isYearly = false) => {
-    if (!data || data.datasets[0].data.length === 0) return null;
+  // --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ РЕНДЕРИНГА BAR CHART ---
+  const renderBarChart = (data, chartTitleText, subtitleText, isYearly = false) => {
+    if (!data || !data.datasets || data.datasets[0].data.length === 0) return null;
     
-    // --- ПРИНУДИТЕЛЬНЫЙ СТАРТ ОСИ Y С 0 ДЛЯ ГОДОВОГО ГРАФИКА ---
     let displayData = data;
-    
     if (isYearly) {
-        const originalData = data.datasets[0].data;
-        
-        // 1. Создаем модифицированный массив данных, добавляя 0
-        const modifiedData = [...originalData, 0];
-        
-        // 2. Создаем модифицированный массив меток, добавляя пустую строку
-        const modifiedLabels = [...data.labels, ""];
-
         displayData = {
-            labels: modifiedLabels,
-            datasets: [{
-                data: modifiedData,
-            }]
+            labels: [...data.labels, ""],
+            datasets: [{ data: [...data.datasets[0].data, 0] }]
         };
-        // Мы используем пустую метку "", чтобы не портить внешний вид графика, 
-        // но при этом BarChart учитывает это нулевое значение для масштабирования оси Y.
     }
-    // -------------------------------------------------------------------
 
-    // Ширина графика рассчитывается на основе КОЛИЧЕСТВА МЕТОК в displayData.labels.
-    const isYearlyTrend = displayData.labels.length > 12; // Теперь 12 месяцев + 1 пустая метка
-    const columnWidth = isYearlyTrend ? 35 : 20; 
-    
-    // Учитываем, что меток стало на одну больше (если isYearly)
-    const chartWidth = displayData.labels.length * columnWidth + 50; 
+    const isLongData = displayData.labels.length > 12;
+    const columnWidth = isLongData ? 35 : 25; 
+    const chartWidth = displayData.labels.length * columnWidth + 60; 
     const isScrollable = chartWidth > screenWidth * 0.85;
 
     return (
-      <View style={{marginBottom: 25, borderBottomWidth: 1, borderBottomColor: '#333', paddingBottom: 15}}>
+      <View style={{ marginBottom: 25 }}>
         <Text style={styles.chartTitle}>{chartTitleText}</Text>
         <Text style={styles.chartSubtitle}>{subtitleText}</Text>
 
         <ScrollView 
           horizontal={isScrollable} 
           showsHorizontalScrollIndicator={isScrollable}
-          contentContainerStyle={{ paddingRight: isScrollable ? 20 : 0 }}
         >
           <BarChart
             data={displayData} 
             width={isScrollable ? chartWidth : screenWidth * 0.85} 
-            height={250} 
+            height={220} 
             yAxisLabel={currency}
             chartConfig={chartConfig} 
             verticalLabelRotation={-45} 
-            style={{
-              marginVertical: 8,
-              borderRadius: 16,
-              paddingLeft: 10, 
-            }}
+            style={{ marginVertical: 8, borderRadius: 16 }}
           />
         </ScrollView>
-        
         {isScrollable && (
-          <Text style={{color: '#AAAAAA', fontSize: 12, textAlign: 'center', marginTop: 5}}>
-            &lt; Swipe to view all data &gt;
-          </Text>
+          <Text style={{color: '#777', fontSize: 10, textAlign: 'center'}}>&lt; Swipe to scroll &gt;</Text>
         )}
+        <View style={styles.divider} />
       </View>
     );
   };
 
   return (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={isVisible}
-      onRequestClose={onClose}
-    >
+    <Modal animationType="slide" transparent={true} visible={isVisible} onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <ScrollView contentContainerStyle={styles.modalContent}>
-          
-          {/* ОБЩИЙ ЗАГОЛОВОК МОДАЛКИ */}
-          <Text style={styles.modalTitle}>Detail Report</Text>
-            
-          {/* 1. ГРАФИК ПО КОНКРЕТНОЙ КАТЕГОРИИ (Bar Chart) */}
-          {renderChart(
-            categoryData, 
-            `Daily Trend for Category: "${title}"`,
-            `Spending by day in ${currency}`
-          )}
-            
-          {/* 2. ГРАФИК ОБЩЕГО МЕСЯЧНОГО ТРЕНДА (Bar Chart) */}
-          {monthlyTrendData && monthlyTrendData.datasets[0].data.length > 0 && 
-            renderChart(
-              monthlyTrendData, 
-              `Overall Monthly Daily Trend`,
-              `Total spending by day in ${currency}`
-            )
-          }
+        <View style={{ flex: 1, width: '100%' }}>
+            <ScrollView contentContainerStyle={styles.modalContent}>
+              
+              <Text style={styles.modalTitle}>Financial Analysis</Text>
 
-          {/* 3. ГРАФИК ГОДОВОГО ТРЕНДА (Bar Chart) - isYearly=true для принудительного старта с 0 */}
-          {yearlyTrendData && yearlyTrendData.datasets[0].data.length > 0 && 
-            renderChart(
-              yearlyTrendData, 
-              `Yearly Spending Trend`,
-              `Total spending over 12 months in ${currency}`,
-              true // <-- Указываем, что это годовой график
-            )
-          }
+              {/* --- КРУГОВАЯ ДИАГРАММА ЛИМИТОВ --- */}
+              <Text style={styles.chartTitle}>Budget Structure</Text>
+              <Text style={styles.chartSubtitle}>Limit allocation by categories ({currency})</Text>
+              
+              {pieData.length > 0 ? (
+                <PieChart
+                  data={pieData}
+                  width={screenWidth * 0.9}
+                  height={200}
+                  chartConfig={chartConfig}
+                  accessor={"limit"}
+                  backgroundColor={"transparent"}
+                  paddingLeft={"15"}
+                  center={[10, 0]}
+                  absolute // Показывать числа, а не проценты
+                />
+              ) : (
+                <Text style={{ color: '#777', textAlign: 'center', marginVertical: 20 }}>No limits set for categories.</Text>
+              )}
 
-          <View style={styles.closeButtonContainer}>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close-circle-outline" size={65} color="#CF6679" />
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
+              <View style={styles.divider} />
+
+              {/* --- СТОЛБЧАТЫЕ ГРАФИКИ --- */}
+              {renderBarChart(
+                categoryData, 
+                `Daily Trend: ${title}`,
+                `Spending by day in ${currency}`
+              )}
+                
+              {renderBarChart(
+                monthlyTrendData, 
+                `Total Monthly Trend`,
+                `All categories combined by day`
+              )}
+
+              {renderBarChart(
+                yearlyTrendData, 
+                `12-Month Spending History`,
+                `Total per month`,
+                true
+              )}
+
+              <TouchableOpacity onPress={onClose} style={styles.closeButtonContainer}>
+                <View style={styles.closeButton}>
+                  <Ionicons name="close-circle-outline" size={60} color="#CF6679" />
+                </View>
+              </TouchableOpacity>
+
+            </ScrollView>
+        </View>
       </View>
     </Modal>
   );
 };
-
 
 export default DailyBarChartModal;
