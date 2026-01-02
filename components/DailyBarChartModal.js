@@ -1,60 +1,18 @@
-// --- DailyBarChartModal.js ---
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Dimensions, ScrollView } from 'react-native'; 
+import React, { useEffect, useRef } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  Modal, 
+  Dimensions, 
+  ScrollView, 
+  Animated 
+} from 'react-native'; 
 import { Ionicons } from '@expo/vector-icons'; 
 import { BarChart, PieChart } from 'react-native-chart-kit'; 
 
 const screenWidth = Dimensions.get('window').width;
-
-const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-  },
-  modalContent: {
-    width: screenWidth * 0.95,
-    backgroundColor: '#1F1F1F',
-    borderRadius: 15,
-    padding: 15,
-    paddingBottom: 45, 
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FF702A',
-    marginBottom: 20, 
-    textAlign: 'center',
-  },
-  chartTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FF702A',
-    marginBottom: 5,
-    textAlign: 'center',
-  },
-  chartSubtitle: {
-    color: '#BBBBBB', 
-    marginBottom: 10, 
-    textAlign: 'center'
-  },
-  closeButtonContainer: { 
-    alignItems: 'center', 
-    marginTop: 25, 
-  },
-  closeButton: {
-    padding: 10,
-    borderRadius: 25,
-    backgroundColor: '#333333', 
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#333',
-    marginVertical: 20,
-    width: '100%'
-  }
-});
 
 const DailyBarChartModal = ({ 
     isVisible, 
@@ -64,12 +22,43 @@ const DailyBarChartModal = ({
     yearlyTrendData, 
     title, 
     currency,
-    allCategories // <-- Добавьте этот пропс при вызове в ReportsScreen
+    allCategories 
 }) => {
     
+  // --- НАСТРОЙКИ АНИМАЦИЙ ---
+  const modalScale = useRef(new Animated.Value(0.9)).current; // Масштаб всей модалки
+  const budgetBounce = useRef(new Animated.Value(-100)).current; // Позиция карточки бюджета
+  const chartSpring = useRef(new Animated.Value(100)).current; // Позиция графиков
+  const opacity = useRef(new Animated.Value(0)).current; // Прозрачность
+
+  useEffect(() => {
+    if (isVisible) {
+      // Запуск каскада пружинных анимаций
+      Animated.parallel([
+        // 1. Появление фона и модалки
+        Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.spring(modalScale, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }),
+        
+        // 2. Вылет карточки бюджета (сверху)
+        Animated.spring(budgetBounce, { toValue: 0, friction: 6, tension: 50, useNativeDriver: true }),
+        
+        // 3. Вылет графиков (снизу) с задержкой
+        Animated.spring(chartSpring, { toValue: 0, friction: 7, tension: 35, delay: 200, useNativeDriver: true })
+      ]).start();
+    } else {
+      // Сброс значений при закрытии
+      modalScale.setValue(0.9);
+      budgetBounce.setValue(-100);
+      chartSpring.setValue(100);
+      opacity.setValue(0);
+    }
+  }, [isVisible]);
+
   if (!isVisible) return null;
 
-  // --- 1. ПОДГОТОВКА ДАННЫХ ДЛЯ PIE CHART (Лимиты) ---
+  // Расчет общей суммы лимитов
+  const totalBudget = (allCategories || []).reduce((sum, cat) => sum + (Number(cat.limit) || 0), 0);
+
   const pieData = (allCategories || [])
     .filter(cat => cat.limit > 0)
     .map(cat => ({
@@ -80,21 +69,18 @@ const DailyBarChartModal = ({
       legendFontSize: 12,
     }));
 
-  // --- БАЗОВАЯ КОНФИГУРАЦИЯ ДЛЯ ГРАФИКОВ ---
   const chartConfig = {
     backgroundGradientFrom: '#1F1F1F',
     backgroundGradientTo: '#1F1F1F',
     decimalPlaces: 0, 
-    color: (opacity = 1) => `rgba(255, 112, 42, ${opacity})`, 
-    labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+    color: (op = 1) => `rgba(255, 112, 42, ${op})`, 
+    labelColor: (op = 1) => `rgba(255, 255, 255, ${op})`,
     propsForLabels: { fontSize: 8 },
     propsForYLabels: { fontSize: 10 },
-    style: { borderRadius: 16 },
     barPercentage: 0.8, 
     fromZero: true, 
   };
     
-  // --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ РЕНДЕРИНГА BAR CHART ---
   const renderBarChart = (data, chartTitleText, subtitleText, isYearly = false) => {
     if (!data || !data.datasets || data.datasets[0].data.length === 0) return null;
     
@@ -107,8 +93,7 @@ const DailyBarChartModal = ({
     }
 
     const isLongData = displayData.labels.length > 12;
-    const columnWidth = isLongData ? 35 : 25; 
-    const chartWidth = displayData.labels.length * columnWidth + 60; 
+    const chartWidth = displayData.labels.length * (isLongData ? 35 : 25) + 60; 
     const isScrollable = chartWidth > screenWidth * 0.85;
 
     return (
@@ -116,10 +101,7 @@ const DailyBarChartModal = ({
         <Text style={styles.chartTitle}>{chartTitleText}</Text>
         <Text style={styles.chartSubtitle}>{subtitleText}</Text>
 
-        <ScrollView 
-          horizontal={isScrollable} 
-          showsHorizontalScrollIndicator={isScrollable}
-        >
+        <ScrollView horizontal={isScrollable} showsHorizontalScrollIndicator={false}>
           <BarChart
             data={displayData} 
             width={isScrollable ? chartWidth : screenWidth * 0.85} 
@@ -130,75 +112,149 @@ const DailyBarChartModal = ({
             style={{ marginVertical: 8, borderRadius: 16 }}
           />
         </ScrollView>
-        {isScrollable && (
-          <Text style={{color: '#777', fontSize: 10, textAlign: 'center'}}>&lt; Swipe to scroll &gt;</Text>
-        )}
         <View style={styles.divider} />
       </View>
     );
   };
 
   return (
-    <Modal animationType="slide" transparent={true} visible={isVisible} onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={{ flex: 1, width: '100%' }}>
-            <ScrollView contentContainerStyle={styles.modalContent}>
-              
-              <Text style={styles.modalTitle}>Financial Analysis</Text>
+    <Modal transparent visible={isVisible} onRequestClose={onClose}>
+      <Animated.View style={[styles.modalOverlay, { opacity }]}>
+        <Animated.View 
+          style={[
+            styles.modalContainer, 
+            { transform: [{ scale: modalScale }] }
+          ]}
+        >
+          <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+            
+            <Text style={styles.headerText}>Financial Insight</Text>
 
-              {/* --- КРУГОВАЯ ДИАГРАММА ЛИМИТОВ --- */}
-              <Text style={styles.chartTitle}>Budget Structure</Text>
-              <Text style={styles.chartSubtitle}>Limit allocation by categories ({currency})</Text>
+            {/* --- КАРТОЧКА БЮДЖЕТА С ПРУЖИНКОЙ --- */}
+            <Animated.View style={[styles.totalBudgetCard, { transform: [{ translateY: budgetBounce }] }]}>
+              <View>
+                <Text style={styles.totalLabel}>Plan for Month</Text>
+                <Text style={styles.totalAmount}>{totalBudget.toLocaleString()} {currency}</Text>
+              </View>
+              <Ionicons name="wallet-outline" size={32} color="#FF702A" />
+            </Animated.View>
+
+            <Animated.View style={{ transform: [{ translateY: chartSpring }] }}>
+              <Text style={styles.chartTitle}>Limit Distribution</Text>
               
               {pieData.length > 0 ? (
                 <PieChart
                   data={pieData}
                   width={screenWidth * 0.9}
-                  height={200}
+                  height={180}
                   chartConfig={chartConfig}
                   accessor={"limit"}
                   backgroundColor={"transparent"}
                   paddingLeft={"15"}
-                  center={[10, 0]}
-                  absolute // Показывать числа, а не проценты
+                  center={[0, 0]}
+                  absolute 
                 />
               ) : (
-                <Text style={{ color: '#777', textAlign: 'center', marginVertical: 20 }}>No limits set for categories.</Text>
+                <Text style={styles.noDataText}>Set category limits in Edit menu</Text>
               )}
 
               <View style={styles.divider} />
 
-              {/* --- СТОЛБЧАТЫЕ ГРАФИКИ --- */}
-              {renderBarChart(
-                categoryData, 
-                `Daily Trend: ${title}`,
-                `Spending by day in ${currency}`
-              )}
-                
-              {renderBarChart(
-                monthlyTrendData, 
-                `Total Monthly Trend`,
-                `All categories combined by day`
-              )}
+              {/* ГРАФИКИ ТРЕНДОВ */}
+              {renderBarChart(categoryData, `Category: ${title}`, `Daily Spending`)}
+              {renderBarChart(monthlyTrendData, `Overall Monthly`, `Daily Total`)}
+              {renderBarChart(yearlyTrendData, `12-Month History`, `Monthly Trend`, true)}
 
-              {renderBarChart(
-                yearlyTrendData, 
-                `12-Month Spending History`,
-                `Total per month`,
-                true
-              )}
-
-              <TouchableOpacity onPress={onClose} style={styles.closeButtonContainer}>
-                <View style={styles.closeButton}>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                   <Ionicons name="close-circle-outline" size={60} color="#CF6679" />
-                </View>
+                  <Text style={{color: '#CF6679', fontWeight: 'bold'}}>CLOSE</Text>
               </TouchableOpacity>
+            </Animated.View>
 
-            </ScrollView>
-        </View>
-      </View>
+          </ScrollView>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 };
+
+const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: screenWidth * 0.95,
+    height: '90%',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: '#333',
+    overflow: 'hidden',
+  },
+  modalContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  headerText: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#FF702A',
+    textAlign: 'center',
+    marginBottom: 20,
+    textTransform: 'uppercase',
+  },
+  totalBudgetCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#252525',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 30,
+    elevation: 5,
+    shadowColor: '#FF702A',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+  },
+  totalLabel: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  totalAmount: {
+    color: '#FFF',
+    fontSize: 26,
+    fontWeight: 'bold',
+  },
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+    textAlign: 'center',
+  },
+  chartSubtitle: {
+    color: '#666', 
+    textAlign: 'center',
+    fontSize: 12,
+    marginBottom: 10,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#333',
+    marginVertical: 25,
+  },
+  noDataText: {
+    color: '#444',
+    textAlign: 'center',
+    marginVertical: 20,
+  },
+  closeBtn: {
+    alignItems: 'center',
+    marginTop: 20,
+  }
+});
 
 export default DailyBarChartModal;

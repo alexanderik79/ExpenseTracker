@@ -1,22 +1,16 @@
-// --- ReportsScreen.js (Полная версия с тремя графиками) ---
-
+// --- ReportsScreen.js ---
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, SectionList, TouchableOpacity, Alert, Dimensions } from 'react-native'; 
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, Alert } from 'react-native'; 
 import { Ionicons } from '@expo/vector-icons'; 
 import { useExpenses } from '../context/ExpenseContext';
-import { LineChart } from 'react-native-chart-kit'; 
-
-// <-- ИМПОРТ НОВОГО КОМПОНЕНТА -->
 import DailyBarChartModal from '../components/DailyBarChartModal'; 
 
-// --- СТИЛИ ---
 const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#121212', 
         paddingHorizontal: 10,
     },
-    // SECTION STYLES (MONTH CARD)
     headerContainer: {
         backgroundColor: '#1F1F1F', 
         padding: 20, 
@@ -44,21 +38,10 @@ const styles = StyleSheet.create({
     headerTotal: {
         fontSize: 18, 
         fontWeight: '700', 
-        color: '#CF6679', 
-        marginBottom: 10,
+        color: '#FFFFFF', 
+        marginBottom: 5,
     },
-    monthlyTrendBox: { 
-        backgroundColor: '#1F1F1F', 
-        width: 300, 
-        height: 100, 
-        borderRadius: 8,
-        overflow: 'hidden', 
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    trendChartStyle: {
-        borderRadius: 8,
-    },
+    // Стили для прогресс-бара
     categoryTotals: {
         marginTop: 15,
         paddingTop: 10,
@@ -72,7 +55,7 @@ const styles = StyleSheet.create({
         marginBottom: 5,
     },
     categoryProgressRow: {
-        paddingVertical: 8,
+        paddingVertical: 10,
         borderBottomWidth: 1,
         borderBottomColor: '#2D2D2D',
     },
@@ -91,29 +74,36 @@ const styles = StyleSheet.create({
         marginTop: 5,
     },
     progressBarBase: {
-        height: 8,
-        borderRadius: 4,
+        height: 10,
+        borderRadius: 5,
         backgroundColor: '#2D2D2D',
         overflow: 'hidden',
-        marginBottom: 5,
+        marginBottom: 8,
     },
     progressBarFill: {
         height: '100%',
-        borderRadius: 4,
+        borderRadius: 5,
     },
     budgetSummary: {
         flexDirection: 'row',
         justifyContent: 'space-between',
+        flexWrap: 'wrap', // На случай длинных валют
     },
     budgetSpent: {
-        fontSize: 12,
-        color: '#FFFFFF',
+        fontSize: 11,
+        color: '#BBBBBB',
         fontWeight: '500',
     },
     budgetRemaining: {
         fontSize: 12,
+        fontWeight: 'bold',
+    },
+    budgetLimit: {
+        fontSize: 11,
+        color: '#BBBBBB',
         fontWeight: '500',
     },
+    // Стили элементов списка
     expenseItem: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -125,304 +115,134 @@ const styles = StyleSheet.create({
         backgroundColor: '#1F1F1F', 
         marginHorizontal: 5,
     },
-    itemDate: {
-        flex: 1.2,
-        fontSize: 14,
-        color: '#AAAAAA', 
-        fontWeight: '500',
-    },
-    itemCategory: {
-        flex: 2.5,
-        fontSize: 16,
-        fontWeight: '500',
-        color: '#FFFFFF', 
-    },
-    itemAmount: {
-        flex: 1.5,
-        fontSize: 16,
-        fontWeight: 'bold',
-        textAlign: 'right',
-        color: '#CF6679', 
-    },
-    deleteButton: {
-        paddingLeft: 10,
-    },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#121212',
-    },
-    emptyText: {
-        fontSize: 18,
-        marginBottom: 10,
-        fontWeight: '500',
-        color: '#FFFFFF',
-    }
+    itemDate: { flex: 1.2, fontSize: 14, color: '#AAAAAA' },
+    itemCategory: { flex: 2.5, fontSize: 16, color: '#FFFFFF' },
+    itemAmount: { flex: 1.5, fontSize: 16, fontWeight: 'bold', textAlign: 'right', color: '#CF6679' },
+    deleteButton: { paddingLeft: 10 },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#121212' },
+    emptyText: { fontSize: 18, color: '#FFFFFF', marginBottom: 10 }
 });
-// --- КОНЕЦ СТИЛЕЙ ---
 
-
-// --- КОМПОНЕНТ: MonthlyTrendChart (Мини-график тренда) ---
-const MonthlyTrendChart = ({ data }) => {
-    // Требуется минимум 2 точки для отрисовки линии
-    if (data.length < 2) {
-        return <Text style={{ color: '#AAAAAA', fontSize: 10, textAlign: 'center', padding: 5 }}>2+ months needed</Text>;
-    }
-
-    const totals = data.map(d => d.total);
-    const minTotal = Math.min(...totals); 
-    
-    // ДИНАМИЧЕСКИЙ РАСЧЕТ ОСИ Y ДЛЯ МАСШТАБИРОВАНИЯ
-    let yAxisMin = 0; 
-    if (minTotal > 0) {
-        yAxisMin = Math.max(0, minTotal - 5); 
-    }
-
-    const chartData = {
-        labels: data.map(d => d.month), 
-        datasets: [
-            {
-                data: totals,
-                color: (opacity = 1) => `rgba(255, 112, 42, ${opacity})`, 
-                strokeWidth: 2
-            }
-        ]
-    };
-    
-    const chartConfig = {
-        backgroundColor: '#1F1F1F', 
-        backgroundGradientFrom: 'rgba(0, 0, 0, 0)', // <-- СДЕЛАТЬ ПОЛНОСТЬЮ ПРОЗРАЧНЫМ
-        backgroundGradientTo: 'rgba(0, 0, 0, 0)',
-        decimalPlaces: 0, 
-        color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-        labelColor: (opacity = 0) => `rgba(255, 255, 255, ${opacity})`, 
-        yAxisMin: yAxisMin, 
-        propsForDots: {
-            r: "1", 
-            strokeWidth: "1",
-            stroke: "#FF702A"
-        },
-    };
-
-    return (
-        <LineChart
-            data={chartData}
-            width={300} 
-            height={100} 
-            chartConfig={chartConfig}
-            bezier 
-            withHorizontalLabels={false} 
-            withVerticalLabels={false} 
-            withInnerLines={false}
-            withOuterLines={false}
-            withShadow={false}
-            style={styles.trendChartStyle} 
-        />
-    );
-};
-// --- КОНЕЦ MonthlyTrendChart ---
-
-
-// --- КОМПОНЕНТ: BudgetProgress ---
-const BudgetProgress = ({ spent, limit, currency, onPress }) => { 
+// --- ОБНОВЛЕННЫЙ КОМПОНЕНТ: BudgetProgress ---
+const BudgetProgress = ({ spent, limit, currency, onPress, isMainBar = false }) => { 
     if (limit <= 0) return null; 
 
     const remaining = limit - spent;
     const percentage = (spent / limit) * 100;
     
-    let barColor = '#91ff2aff'; 
+    // Цвет бара
+    let barColor = '#91ff2aff'; // Зеленый
+    if (percentage > 75) barColor = '#FFC300'; // Желтый
+    if (percentage > 100) barColor = '#CF6679'; // Красный
 
-    if (percentage > 75) barColor = '#FFC300';
-    if (percentage > 100) barColor = '#CF6679';
+    // Цвет текста для Remaining
+    const remainingColor = remaining < 0 ? '#CF6679' : '#91ff2aff';
 
     const barWidth = Math.min(percentage, 100); 
 
     return (
         <TouchableOpacity 
             onPress={onPress} 
-            style={styles.progressBarContainer}
+            disabled={!onPress}
+            style={[styles.progressBarContainer, isMainBar && { marginBottom: 15 }]}
         >
-            <View style={[styles.progressBarBase, {backgroundColor: remaining < 0 ? '#330000' : '#2D2D2D'}]}>
+            <View style={[styles.progressBarBase, { height: isMainBar ? 14 : 10, backgroundColor: remaining < 0 ? '#441111' : '#2D2D2D' }]}>
                 <View style={[styles.progressBarFill, { width: `${barWidth}%`, backgroundColor: barColor }]} />
             </View>
+            
             <View style={styles.budgetSummary}>
-                <Text style={styles.budgetSpent}>Spent: {spent.toFixed(2)} {currency}</Text> 
-                <Text style={[styles.budgetRemaining, { color: remaining < 0 ? '#CF6679' : '#BBBBBB' }]}>
-                    Limit: {limit.toFixed(2)} {currency} 
+                <Text style={styles.budgetSpent}>Spent: {spent.toFixed(0)} {currency}</Text>
+                
+                <Text style={[styles.budgetRemaining, { color: remainingColor }]}>
+                    {remaining >= 0 ? 'Remaining: ' : 'Over: '} 
+                    {Math.abs(remaining).toFixed(0)} {currency}
                 </Text>
+
+                <Text style={styles.budgetLimit}>Limit: {limit.toFixed(0)} {currency}</Text>
             </View>
         </TouchableOpacity>
     );
 };
-// --- КОНЕЦ BudgetProgress ---
 
-
-// --- HELPER ФУНКЦИИ ---
-
+// --- HELPER FUNCTIONS (остаются без изменений) ---
 const getTitle = (monthKey) => {
     const [year, month] = monthKey.split('-');
     const date = new Date(year, month - 1); 
-    const options = { year: 'numeric', month: 'long' };
-    return date.toLocaleDateString('en-US', options);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
 };
 
 const getMonthName = (monthKey) => {
     const [year, month] = monthKey.split('-');
     const date = new Date(year, month - 1); 
-    const options = { month: 'short' };
-    return date.toLocaleDateString('en-US', options);
+    return date.toLocaleDateString('en-US', { month: 'short' });
 };
 
-const groupExpenses = (expenses, categories) => {
+const groupExpenses = (expenses) => {
     const groupedData = {};
-
     expenses.forEach(expense => {
-        const [year, month] = expense.date.split('-'); 
-        const monthKey = `${year}-${month}`; 
-
+        const monthKey = expense.date.substring(0, 7); 
         if (!groupedData[monthKey]) {
-            groupedData[monthKey] = {
-                title: monthKey, 
-                total: 0,
-                data: [], 
-                categories: {}, 
-            };
+            groupedData[monthKey] = { title: monthKey, total: 0, data: [], categories: {} };
         }
-
         groupedData[monthKey].total += expense.amount;
         groupedData[monthKey].data.push(expense);
-        
-        const categoryName = expense.category;
-        if (!groupedData[monthKey].categories[categoryName]) {
-            groupedData[monthKey].categories[categoryName] = 0;
-        }
-        groupedData[monthKey].categories[categoryName] += expense.amount;
+        groupedData[monthKey].categories[expense.category] = (groupedData[monthKey].categories[expense.category] || 0) + expense.amount;
     });
-
     return Object.values(groupedData).sort((a, b) => b.title.localeCompare(a.title));
 };
 
-// Функция: Группировка трат по дням для BarChart (по КОНКРЕТНОЙ КАТЕГОРИИ)
 const prepareDailyData = (expenses, categoryName) => {
-    if (!expenses || expenses.length === 0) return { labels: [], datasets: [{ data: [] }] };
-
     const dailyTotals = {};
-    
-    // 1. Сбор данных по дням
     expenses.forEach(exp => {
         if (exp.category === categoryName) {
             const day = exp.date.split('-')[2]; 
             dailyTotals[day] = (dailyTotals[day] || 0) + exp.amount;
         }
     });
-
-    if (Object.keys(dailyTotals).length === 0) {
-        return { labels: [], datasets: [{ data: [] }] };
-    }
-
-    // 2. Генерация всех дней месяца для правильной оси X
-    const firstDayKey = expenses[0].date.substring(0, 7); 
-    const [year, month] = firstDayKey.split('-');
+    const [year, month] = expenses[0].date.split('-');
     const daysInMonth = new Date(year, month, 0).getDate();
-    
-    const labels = [];
-    const data = [];
-
+    const labels = []; const data = [];
     for (let i = 1; i <= daysInMonth; i++) {
         const dayKey = i.toString().padStart(2, '0');
-        labels.push(dayKey);
-        data.push(dailyTotals[dayKey] || 0);
+        labels.push(dayKey); data.push(dailyTotals[dayKey] || 0);
     }
-
-    return {
-        labels: labels,
-        datasets: [{
-            data: data,
-        }]
-    };
+    return { labels, datasets: [{ data }] };
 };
 
-// Функция: Группировка трат по дням для BarChart (ОБЩИЙ ТРЕНД ЗА МЕСЯЦ)
 const prepareMonthlyTrendData = (monthExpenses, monthKey) => {
-    if (!monthExpenses || monthExpenses.length === 0) return { labels: [], datasets: [{ data: [] }] };
-
     const dailyTotals = {};
-    
-    // 1. Сбор данных по дням для ВСЕХ категорий в месяце
     monthExpenses.forEach(exp => {
-        const expenseMonthKey = exp.date.substring(0, 7);
-        if (expenseMonthKey === monthKey) {
-            const day = exp.date.split('-')[2]; 
-            dailyTotals[day] = (dailyTotals[day] || 0) + exp.amount;
-        }
+        const day = exp.date.split('-')[2]; 
+        dailyTotals[day] = (dailyTotals[day] || 0) + exp.amount;
     });
-
-    if (Object.keys(dailyTotals).length === 0) {
-        return { labels: [], datasets: [{ data: [] }] };
-    }
-
-    // 2. Генерация всех дней месяца для правильной оси X
     const [year, month] = monthKey.split('-');
     const daysInMonth = new Date(year, month, 0).getDate();
-    
-    const labels = [];
-    const data = [];
-
+    const labels = []; const data = [];
     for (let i = 1; i <= daysInMonth; i++) {
         const dayKey = i.toString().padStart(2, '0');
-        labels.push(dayKey);
-        data.push(dailyTotals[dayKey] || 0);
+        labels.push(dayKey); data.push(dailyTotals[dayKey] || 0);
     }
-
-    return {
-        labels: labels,
-        datasets: [{
-            data: data,
-        }]
-    };
+    return { labels, datasets: [{ data }] };
 };
 
-// НОВАЯ ФУНКЦИЯ: Группировка трат по месяцам для BarChart (ГОДОВОЙ ТРЕНД)
 const prepareYearlyTrendData = (sections) => {
-    // Используем последние 12 месяцев
     const dataSlice = sections.slice(0, 12).reverse();
-    
-    const labels = dataSlice.map(d => getMonthName(d.title));
-    const data = dataSlice.map(d => d.total);
-
-    if (data.length === 0) {
-        return { labels: [], datasets: [{ data: [] }] };
-    }
-
     return {
-        labels: labels,
-        datasets: [{
-            data: data,
-        }]
+        labels: dataSlice.map(d => getMonthName(d.title)),
+        datasets: [{ data: dataSlice.map(d => d.total) }]
     };
 };
-// --- КОНЕЦ HELPER ФУНКЦИЙ ---
 
-
+// --- ОСНОВНОЙ КОМПОНЕНТ ---
 const ReportsScreen = () => {
     const { expenses, deleteExpense, categories, currency } = useExpenses(); 
-    
-    // --- STATE для модального окна (ОБНОВЛЕН) ---
     const [modalVisible, setModalVisible] = useState(false);
-    
-    // 1. Данные для графика категории (Bar)
     const [categoryChartData, setCategoryChartData] = useState(null); 
-    
-    // 2. Данные для общего месячного тренда (Bar)
     const [monthlyTrendChartData, setMonthlyTrendChartData] = useState(null); 
-    
-    // 3. Данные для годового тренда (Line)
     const [yearlyTrendChartData, setYearlyTrendChartData] = useState(null);
-    
     const [chartTitle, setChartTitle] = useState('');
     
-    const sections = useMemo(() => groupExpenses(expenses, categories), [expenses, categories]);
+    const sections = useMemo(() => groupExpenses(expenses), [expenses]);
     
     const categoryLimits = useMemo(() => {
         return categories.reduce((acc, cat) => {
@@ -431,124 +251,74 @@ const ReportsScreen = () => {
         }, {});
     }, [categories]);
 
-    // Подготовка данных для мини-чарта тренда (последние 12 месяцев)
-    const monthlyTrendData = useMemo(() => {
-        return sections.slice(0, 12).map(section => ({
-            month: getMonthName(section.title),
-            total: section.total,
-        })).reverse(); 
-    }, [sections]);
+    // Общий лимит для всего месяца (сумма всех лимитов категорий)
+    const totalMonthlyLimit = useMemo(() => {
+        return categories.reduce((sum, cat) => sum + (Number(cat.limit) || 0), 0);
+    }, [categories]);
 
-    const formatDate = (dateString) => {
-        const options = { day: 'numeric', month: 'short' };
-        return new Date(dateString).toLocaleDateString('en-US', options); 
-    };
-    
-    const handleDelete = (id) => {
-        Alert.alert(
-            "Confirm Deletion",
-            "Are you sure you want to delete this expense?",
-            [
-                { text: "Cancel", style: "cancel" },
-                { text: "Delete", style: "destructive", onPress: () => deleteExpense(id) }
-            ]
-        );
-    };
-
-    // --- ОБРАБОТЧИК ДЛЯ ОТКРЫТИЯ МОДАЛЬНОГО ОКНА ---
     const handleBarPress = (monthKey, categoryName) => {
-        
         const monthSection = sections.find(s => s.title === monthKey);
-        if (!monthSection || monthSection.data.length === 0) return;
+        if (!monthSection) return;
 
-        // 1. Готовим данные для графика КАТЕГОРИИ
-        const categoryData = prepareDailyData(monthSection.data, categoryName);
-
-        // 2. Готовим данные для графика ОБЩЕГО ТРЕНДА ЗА МЕСЯЦ
-        const trendData = prepareMonthlyTrendData(monthSection.data, monthKey); // Используем данные только текущего месяца
-        
-        // 3. Готовим данные для графика ГОДОВОГО ТРЕНДА
-        const yearlyData = prepareYearlyTrendData(sections); 
-
-        // 4. Устанавливаем стейты
-        setCategoryChartData(categoryData);
-        setMonthlyTrendChartData(trendData); 
-        setYearlyTrendChartData(yearlyData);
-        setChartTitle(`${categoryName}`);    
-        setModalVisible(true);
+        setCategoryChartData(prepareDailyData(monthSection.data, categoryName));
+        setMonthlyTrendChartData(prepareMonthlyTrendData(monthSection.data, monthKey)); 
+        setYearlyTrendChartData(prepareYearlyTrendData(sections));
+        setChartTitle(categoryName); setModalVisible(true);
     };
-    // --------------------------------------------------------
 
     const renderItem = ({ item }) => (
         <View style={styles.expenseItem}>
-            <Text style={styles.itemDate}>{formatDate(item.date)}</Text>
+            <Text style={styles.itemDate}>{new Date(item.date).toLocaleDateString('en-US', {day: 'numeric', month: 'short'})}</Text>
             <Text style={styles.itemCategory}>{item.category}</Text>
-            <Text style={styles.itemAmount}>{item.amount.toFixed(2)} {currency}</Text> 
-            
-            <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
-                <Ionicons name="trash-bin-outline" size={20} color="#CF6679" />
+            <Text style={styles.itemAmount}>{item.amount.toFixed(0)} {currency}</Text> 
+            <TouchableOpacity onPress={() => deleteExpense(item.id)} style={styles.deleteButton}>
+                <Ionicons name="trash-bin-outline" size={18} color="#CF6679" />
             </TouchableOpacity>
         </View>
     );
 
-    // Component for the section header (Month and totals)
-    const renderSectionHeader = ({ section: { title, total, categories: monthCategories } }) => {
-        
-        const monthTitle = getTitle(title);
-        
-        return (
-            <View style={styles.headerContainer}>
-                {/* Заголовок месяца + График тренда */}
-                <View style={styles.headerTopRow}> 
-                    <Text style={styles.headerTitle}>{monthTitle}</Text>
-                    
-                    {/* ТРЕНД ЗА ПОСЛЕДНИЕ 12 МЕСЯЦЕВ (показываем только для самой свежей секции) */}
-                    {title === sections[0]?.title && (
-                        <View style={styles.monthlyTrendBox}>
-                            <MonthlyTrendChart data={monthlyTrendData} />
+    const renderSectionHeader = ({ section: { title, total, categories: monthCategories } }) => (
+        <View style={styles.headerContainer}>
+            <View style={styles.headerTopRow}> 
+                <Text style={styles.headerTitle}>{getTitle(title)}</Text>
+            </View>
+
+            <Text style={styles.headerTotal}>Total Spent: {total.toFixed(0)} {currency}</Text>
+            
+            {/* ГЛАВНЫЙ БАР МЕСЯЦА */}
+            <BudgetProgress 
+                spent={total} 
+                limit={totalMonthlyLimit} 
+                currency={currency} 
+                isMainBar={true}
+            />
+
+            <View style={styles.categoryTotals}>
+                <Text style={styles.categoryTotalsLabel}>Category Breakdown:</Text>
+                {Object.keys(monthCategories).map(catName => {
+                    const spent = monthCategories[catName];
+                    const limit = categoryLimits[catName] || 0; 
+                    return (
+                        <View key={catName} style={styles.categoryProgressRow}>
+                            <Text style={styles.categoryProgressLabel}>{catName}</Text>
+                            {limit > 0 ? (
+                                <BudgetProgress 
+                                    spent={spent} 
+                                    limit={limit} 
+                                    currency={currency} 
+                                    onPress={() => handleBarPress(title, catName)} 
+                                />
+                            ) : (
+                                <TouchableOpacity onPress={() => handleBarPress(title, catName)}>
+                                    <Text style={styles.categoryNoLimitText}>Spent: {spent.toFixed(0)} {currency} (No limit)</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
-                    )}
-                </View>
-
-                <Text style={styles.headerTotal}>Total for Month: {total.toFixed(2)} {currency}</Text>
-                
-                <View style={styles.categoryTotals}>
-                    {Object.keys(monthCategories).map(catName => {
-                        const spent = monthCategories[catName];
-                        const limit = categoryLimits[catName] || 0; 
-
-                        return (
-                            <View key={catName} style={styles.categoryProgressRow}>
-                                <Text style={styles.categoryProgressLabel}>{catName}</Text>
-                                {limit > 0 ? (
-                                    <BudgetProgress 
-                                        spent={spent} 
-                                        limit={limit} 
-                                        currency={currency} 
-                                        onPress={() => handleBarPress(title, catName)} 
-                                    />
-                                ) : (
-                                    // Обеспечиваем возможность нажатия, даже если лимита нет
-                                    <TouchableOpacity onPress={() => handleBarPress(title, catName)}>
-                                        <Text style={styles.categoryNoLimitText}>Spent: {spent.toFixed(2)} {currency} (No limit)</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        );
-                    })}
-                </View>
+                    );
+                })}
             </View>
-        );
-    };
-
-    if (expenses.length === 0) {
-        return (
-            <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No expenses recorded yet.</Text>
-                <Text style={{color: '#BBBBBB'}}>Go to the "Expense" tab to start tracking!</Text>
-            </View>
-        );
-    }
+        </View>
+    );
 
     return (
         <View style={styles.container}>
@@ -558,10 +328,7 @@ const ReportsScreen = () => {
                 renderSectionHeader={renderSectionHeader}
                 keyExtractor={(item) => item.id}
                 stickySectionHeadersEnabled={false}
-                contentContainerStyle={{ paddingBottom: 20 }}
             />
-            
-            {/* --- ИСПОЛЬЗУЕМ ВЫНЕСЕННЫЙ КОМПОНЕНТ --- */}
             <DailyBarChartModal
                 isVisible={modalVisible}
                 onClose={() => setModalVisible(false)}
