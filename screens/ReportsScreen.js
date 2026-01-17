@@ -1,12 +1,16 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, SectionList, TouchableOpacity, Alert } from 'react-native'; 
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, Alert, LayoutAnimation, Platform, UIManager } from 'react-native'; 
 import { Ionicons } from '@expo/vector-icons'; 
 import { useExpenses } from '../context/ExpenseContext';
 
 import DailyBarChartModal from '../components/DailyBarChartModal'; 
 import BudgetStatsModal from '../components/BudgetStatsModal'; 
 
-// --- Вспомогательный компонент прогресс-бара (Вынесен вверх для стабильности) ---
+// Включаем анимацию для Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 const BudgetProgress = ({ spent, limit, currency, onPress, isMainBar = false }) => { 
     if (!limit || limit <= 0) return null; 
     
@@ -23,7 +27,6 @@ const BudgetProgress = ({ spent, limit, currency, onPress, isMainBar = false }) 
     return (
         <TouchableOpacity onPress={onPress} style={[styles.progressContainer, isMainBar && { marginBottom: 10 }]}>
             <View style={[styles.progressBase, isMainBar && { height: 12 }]}>
-                {/* Использован обычный View вместо Animated.View во избежание краша */}
                 <View style={[styles.progressFill, { width: `${barWidth}%`, backgroundColor: barColor }]} />
             </View>
             <View style={styles.progressLabels}>
@@ -40,9 +43,11 @@ const BudgetProgress = ({ spent, limit, currency, onPress, isMainBar = false }) 
 const ReportsScreen = () => {
     const { expenses = [], deleteExpense, categories = [], currency } = useExpenses(); 
     
+    // Состояние для хранения развернутых месяцев (ключ - ID месяца, значение - boolean)
+    const [expandedMonths, setExpandedMonths] = useState({});
+
     const [trendModalVisible, setTrendModalVisible] = useState(false);
     const [statsModalVisible, setStatsModalVisible] = useState(false);
-    
     const [categoryChartData, setCategoryChartData] = useState(null); 
     const [monthlyTrendChartData, setMonthlyTrendChartData] = useState(null); 
     const [yearlyTrendChartData, setYearlyTrendChartData] = useState(null);
@@ -61,18 +66,24 @@ const ReportsScreen = () => {
         return categories.reduce((sum, cat) => sum + (Number(cat.limit) || 0), 0);
     }, [categories]);
 
+    // Функция переключения аккордеона
+    const toggleMonth = (monthTitle) => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setExpandedMonths(prev => ({
+            ...prev,
+            [monthTitle]: !prev[monthTitle]
+        }));
+    };
+
     const handleCategoryPress = (monthKey, categoryName) => {
         const monthSection = sections.find(s => s.title === monthKey);
         if (!monthSection) return;
-
         setCategoryChartData(prepareDailyData(monthSection.data, categoryName));
         setMonthlyTrendChartData(prepareMonthlyTrendData(monthSection.data, monthKey)); 
         setYearlyTrendChartData(prepareYearlyTrendData(sections));
         setChartTitle(categoryName);
         setTrendModalVisible(true);
     };
-
-    const handleMainBarPress = () => setStatsModalVisible(true);
 
     const handleDelete = (id) => {
         Alert.alert("Delete", "Are you sure?", [
@@ -81,57 +92,87 @@ const ReportsScreen = () => {
         ]);
     };
 
-    const renderItem = ({ item }) => (
-        <View style={styles.expenseItem}>
-            <View style={{ flex: 1 }}>
-                <Text style={styles.itemCategory}>{item.category}</Text>
-                <Text style={styles.itemDate}>{new Date(item.date).toLocaleDateString('en-US', {day: 'numeric', month: 'short'})}</Text>
+    // Отрисовка расхода (только если месяц развернут)
+    const renderItem = ({ item, section }) => {
+        if (!expandedMonths[section.title]) return null;
+        
+        return (
+            <View style={styles.expenseItem}>
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.itemCategory}>{item.category}</Text>
+                    <Text style={styles.itemDate}>{new Date(item.date).toLocaleDateString('en-US', {day: 'numeric', month: 'short'})}</Text>
+                </View>
+                <Text style={styles.itemAmount}>{Number(item.amount).toFixed(2)} {currency}</Text> 
+                <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
+                    <Ionicons name="trash-outline" size={20} color="#CF6679" />
+                </TouchableOpacity>
             </View>
-            <Text style={styles.itemAmount}>{Number(item.amount).toFixed(2)} {currency}</Text> 
-            <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
-                <Ionicons name="trash-outline" size={20} color="#CF6679" />
-            </TouchableOpacity>
-        </View>
-    );
+        );
+    };
 
-    const renderSectionHeader = ({ section: { title, total, categories: monthCategories } }) => (
-        <View style={styles.headerContainer}>
-            <Text style={styles.headerTitle}>{getTitle(title)}</Text>
-            <Text style={styles.headerTotal}>Total: {total.toFixed(2)} {currency}</Text>
-            
-            <BudgetProgress 
-                spent={total} 
-                limit={totalMonthlyLimit} 
-                currency={currency} 
-                onPress={handleMainBarPress}
-                isMainBar={true}
-            />
+    const renderSectionHeader = ({ section }) => {
+        const { title, total, categories: monthCategories } = section;
+        const isExpanded = !!expandedMonths[title];
 
-            <View style={styles.categoryTotals}>
-                {Object.keys(monthCategories).map(catName => {
-                    const spent = monthCategories[catName];
-                    const limit = categoryLimits[catName] || 0; 
-                    return (
-                        <View key={catName} style={styles.categoryProgressRow}>
-                            <Text style={styles.categoryLabel}>{catName}</Text>
-                            {limit > 0 ? (
-                                <BudgetProgress 
-                                    spent={spent} 
-                                    limit={limit} 
-                                    currency={currency} 
-                                    onPress={() => handleCategoryPress(title, catName)} 
-                                />
-                            ) : (
-                                <TouchableOpacity onPress={() => handleCategoryPress(title, catName)}>
-                                    <Text style={styles.noLimitText}>Spent: {spent.toFixed(2)} {currency}</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                    );
-                })}
+        return (
+            <View style={styles.headerContainer}>
+                {/* Кликабельная шапка месяца */}
+                <TouchableOpacity 
+                    style={styles.monthSelector} 
+                    onPress={() => toggleMonth(title)}
+                    activeOpacity={0.7}
+                >
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.headerTitle}>{getTitle(title)}</Text>
+                        <Text style={styles.headerTotal}>Total: {total.toFixed(2)} {currency}</Text>
+                    </View>
+                    <Ionicons 
+                        name={isExpanded ? "chevron-up-circle" : "chevron-down-circle"} 
+                        size={32} 
+                        color="#FF702A" 
+                    />
+                </TouchableOpacity>
+                
+                {/* Главный прогресс-бар (Виден ВСЕГДА) */}
+                <BudgetProgress 
+                    spent={total} 
+                    limit={totalMonthlyLimit} 
+                    currency={currency} 
+                    onPress={() => setStatsModalVisible(true)}
+                    isMainBar={true}
+                />
+
+                {/* Категории (Видны ТОЛЬКО если развернуто) */}
+                {isExpanded && (
+                    <View style={styles.categoryTotals}>
+                        <Text style={styles.breakdownLabel}>Category Breakdown</Text>
+                        {Object.keys(monthCategories).map(catName => {
+                            const spent = monthCategories[catName];
+                            const limit = categoryLimits[catName] || 0; 
+                            return (
+                                <View key={catName} style={styles.categoryProgressRow}>
+                                    <Text style={styles.categoryLabel}>{catName}</Text>
+                                    {limit > 0 ? (
+                                        <BudgetProgress 
+                                            spent={spent} 
+                                            limit={limit} 
+                                            currency={currency} 
+                                            onPress={() => handleCategoryPress(title, catName)} 
+                                        />
+                                    ) : (
+                                        <TouchableOpacity onPress={() => handleCategoryPress(title, catName)} style={styles.noLimitRow}>
+                                            <Text style={styles.noLimitText}>Spent: {spent.toFixed(2)} {currency}</Text>
+                                            <Ionicons name="stats-chart" size={14} color="#555" />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            );
+                        })}
+                    </View>
+                )}
             </View>
-        </View>
-    );
+        );
+    };
 
     if (!expenses || expenses.length === 0) {
         return (
@@ -150,6 +191,7 @@ const ReportsScreen = () => {
                 renderSectionHeader={renderSectionHeader}
                 keyExtractor={(item) => item.id}
                 stickySectionHeadersEnabled={false}
+                contentContainerStyle={{ paddingBottom: 40 }}
             />
             
             <DailyBarChartModal
@@ -220,12 +262,15 @@ const prepareYearlyTrendData = (sections) => {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#121212' },
-    headerContainer: { backgroundColor: '#1F1F1F', padding: 20, margin: 10, borderRadius: 20 },
+    headerContainer: { backgroundColor: '#1F1F1F', padding: 20, margin: 10, borderRadius: 20, elevation: 3 },
+    monthSelector: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
     headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#FF702A' },
-    headerTotal: { fontSize: 16, color: '#FFF', marginVertical: 10 },
-    categoryTotals: { borderTopWidth: 1, borderTopColor: '#333', marginTop: 10, paddingTop: 10 },
+    headerTotal: { fontSize: 14, color: '#AAA', marginTop: 2 },
+    categoryTotals: { borderTopWidth: 1, borderTopColor: '#333', marginTop: 15, paddingTop: 10 },
+    breakdownLabel: { color: '#666', fontSize: 12, marginBottom: 10, fontWeight: 'bold', textTransform: 'uppercase' },
     categoryProgressRow: { marginBottom: 15 },
     categoryLabel: { color: '#FFF', fontSize: 16, marginBottom: 5 },
+    noLimitRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     noLimitText: { color: '#888', fontSize: 14 },
     progressContainer: { width: '100%' },
     progressBase: { height: 8, backgroundColor: '#333', borderRadius: 4, overflow: 'hidden' },
@@ -233,7 +278,7 @@ const styles = StyleSheet.create({
     progressLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
     progressSubText: { fontSize: 10, color: '#888' },
     progressRemaining: { fontSize: 11, fontWeight: 'bold' },
-    expenseItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1F1F1F', padding: 15, marginHorizontal: 10, borderBottomWidth: 1, borderBottomColor: '#2D2D2D' },
+    expenseItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#181818', padding: 15, marginHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#2D2D2D' },
     itemCategory: { color: '#FFF', fontSize: 16 },
     itemDate: { color: '#666', fontSize: 12 },
     itemAmount: { color: '#CF6679', fontWeight: 'bold' },
