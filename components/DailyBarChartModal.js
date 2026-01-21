@@ -142,7 +142,6 @@ const DailyBarChartModal = ({
 
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                   <Ionicons name="close-circle-outline" size={60} color="#CF6679" />
-                  <Text style={styles.closeBtnText}>BACK TO REPORTS</Text>
               </TouchableOpacity>
 
             </Animated.View>
